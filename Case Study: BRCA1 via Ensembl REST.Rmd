@@ -1,0 +1,26 @@
+---
+title: 'Case Study: BRCA1 via Ensembl REST'
+output: html_document
+date: "2025-08-25"
+---
+
+```{r libraries, include=FALSE}
+library(httr2)
+library(jsonlite)
+```
+
+
+
+```{bash}
+curl -s \
+  -H "Accept: application/json" \
+  "https://rest.ensembl.org/lookup/symbol/homo_sapiens/BRCA1?expand=1"
+
+```
+
+
+
+```{r pressure, echo=FALSE}
+plot(pressure)
+```
+
