@@ -3,24 +3,256 @@ title: 'Case Study: BRCA1 via Ensembl REST'
 output: html_document
 date: "2025-08-25"
 ---
+# Introduction
+
+This mini-project demonstrates how to use a **REST API** in bioinformatics, using the
+[Ensembl REST API](https://rest.ensembl.org/).  
+We will practice making requests in **Bash** (with `curl`) and parsing the results in **R**.
+The project covers:
+
+1. Looking up a gene by symbol (BRCA1)  
+2. Fetching genomic sequences  
+3. Exploring transcripts  
+4. Querying a genomic region for overlapping genes  
+5. Debugging with headers and listing available species  
+6. Batch queries (symbols → Ensembl IDs → FASTA)  
+
+We will use R to parse JSON and FASTA results.
 
 ```{r libraries, include=FALSE}
 library(httr2)
 library(jsonlite)
+library(dplyr)
+library(purrr)
+library(readr)
+library(glue)
+library(listviewer)
+
+
+
 ```
 
+# Lookup a gene by symbol
+
+Given a gene symbol (BRCA1), find its Ensembl gene ID, chromosome, and coordinates.
+We add expand=1 to include transcript information as well.
+
+In the below code:
+
+- lookup/symbol → endpoint to look up by gene symbol
+
+- homo_sapiens → species name
+
+- BRCA1 → gene symbol
+
+- expand=1 → include children features (transcripts, exons)
+
+```{bash}
+
+curl -s -H "Accept: application/json" \
+"https://rest.ensembl.org/lookup/symbol/homo_sapiens/BRCA1?expand=1" \
+> brca1.json
+```
+
+## Parse in R:
+
+```{r}
+
+brca1 <- jsonlite::fromJSON("brca1.json", simplifyVector = TRUE)
+brca1$id               # Ensembl gene ID
+brca1$seq_region_name  # Chromosome
+c(brca1$start, brca1$end, brca1$strand)  # Coordinates
+length(brca1$Transcript)                 # Number of transcripts
+
+
+```
+
+# Download genomic sequence
+
+Retrieve the genomic sequence of BRCA1 using its Ensembl ID.
+
+- /sequence/id/{id} → fetches sequence by Ensembl ID
+
+- type=genomic → genomic DNA sequence
+
+- Accept: text/x-fasta → return FASTA format
+
+```{bash}
+
+curl -s -H "Accept: text/x-fasta" \
+  "https://rest.ensembl.org/sequence/id/ENSG00000012048?type=genomic" \
+  > BRCA1_genomic.fasta
+
+```
+
+## Check in R:
+
+```{r}
+
+fa <- readr::read_file("BRCA1_genomic.fasta")
+substr(fa, 1, 200)
+```
+
+# Download transcripts
+
+Up until now, we grabbed the BRCA1 gene and downloaded the whole genomic DNA sequence. But remember: genes can make different “versions” of RNA, called transcripts. Each transcript is like an alternative recipe for making the protein.
+
+Inside each transcript, there’s a special stretch called the CDS (coding DNA sequence). That’s the part of the DNA that actually codes for the protein.
+
+1. Pull out the first transcript ID from the BRCA1 record.
+
+```{r}
+# extract first transcript ID from brca1.json
+stopifnot(!is.null(brca1$Transcript), length(brca1$Transcript) > 0)
+tx_id <- brca1$Transcript$id[[1]]
+tx_id
+writeLines(tx_id, "tx_id.txt")
+```
+
+2. Use that transcript ID to download its CDS sequence in FASTA format.
+
+```{bash}
+
+TX_ID=$(cat tx_id.txt)
+curl -s -H "Accept: text/x-fasta" \
+  "https://rest.ensembl.org/sequence/id/${TX_ID}?type=cds" \
+  > "${TX_ID}_cds.fasta"
+
+```
+
+## Check in R:
+
+```{r}
+
+cds <- readr::read_file(paste0(tx_id, "_cds.fasta"))
+substr(cds, 1, 200)
+
+```
+
+# Overlap by genomic region
+Find all genes overlapping a specific region on chromosome 17.
+
+- /overlap/region/{species}/{chr}:{start}-{end} → region query
+
+- feature=gene → only return genes
+
+```{bash}
+curl -s -H "Accept: application/json" \
+  "https://rest.ensembl.org/overlap/region/human/17:43000000-43200000?feature=gene" \
+  > overlap_chr17.json
+
+```
+
+## Check in R:
+
+```{r}
+ov <- jsonlite::fromJSON("overlap_chr17.json", simplifyVector = TRUE)
+data.frame(
+  symbol = ov$external_name,
+  gene_id = ov$gene_id,
+  chr = ov$seq_region_name,
+  start = ov$start,
+  end = ov$end
+)
+
+
+```
+# List available species and debug with headers
+
+Verify the API is live: Verify the API is live and list available species.
+
+and 
+
+Inspect response headers to check status codes:This prints headers including 200 OK (success) or errors like 429 Too Many Requests.
+
+```{bash}
+
+curl -s "https://rest.ensembl.org/info/species?content-type=application/json" \
+  > species.json
+curl -s -D - -o /dev/null "https://rest.ensembl.org/info/ping"
+
+```
+
+## Check in R:
+
+```{r}
+
+sp <- jsonlite::fromJSON("species.json")
+length(sp$species)  # number of species
+head(sp$species$name)
+
+```
+
+# Batch queries (symbols → Ensembl IDs)
+
+Automate look up for multiple symbols (BRCA1, TP53, EGFR).
+
+```{r}
+
+symbols <- c("BRCA1", "TP53", "EGFR")
+writeLines(symbols, "symbols.txt")
+
+```
 
 
 ```{bash}
-curl -s \
-  -H "Accept: application/json" \
-  "https://rest.ensembl.org/lookup/symbol/homo_sapiens/BRCA1?expand=1"
+
+mkdir -p data
+while read SYM; do
+  curl -s -H "Accept: application/json" \
+    "https://rest.ensembl.org/lookup/symbol/homo_sapiens/${SYM}?expand=0" \
+    > "data/${SYM}.json"
+  sleep 0.2
+done < symbols.txt
 
 ```
 
 
+## check in R 
 
-```{r pressure, echo=FALSE}
-plot(pressure)
+```{r}
+
+files <- list.files("data", pattern = "\\.json$", full.names = TRUE)
+rows <- lapply(files, function(f){
+  x <- jsonlite::fromJSON(f, simplifyVector = TRUE)
+  data.frame(
+    symbol = sub("\\.json$", "", basename(f)),
+    id = x$id,
+    chr = x$seq_region_name,
+    start = x$start,
+    end = x$end,
+    strand = x$strand
+  )
+})
+tbl <- do.call(rbind, rows)
+tbl
+write_csv(tbl, "genes_coordinates.csv")
+
+
+```
+
+# Batch download genomic FASTA
+For each Ensembl ID, download its genomic sequence.
+
+```{bash}
+
+awk -F, 'NR>1 {print $2}' genes_coordinates.csv > gene_ids.txt
+
+mkdir -p fasta_genomic
+while read GID; do
+  curl -s -H "Accept: text/x-fasta" \
+    "https://rest.ensembl.org/sequence/id/${GID}?type=genomic" \
+    > "fasta_genomic/${GID}_genomic.fasta"
+  sleep 0.2
+done < gene_ids.txt
+
+
+```
+
+
+```{r}
+
+sessionInfo()
+
 ```
 
