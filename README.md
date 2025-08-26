@@ -7,7 +7,7 @@ The tutorial is implemented as an **R Markdown document** (`ensembl_rest_tutoria
 
 ---
 
-## What you will learn
+## Goals
 
 - What a **REST API** is and how it works in bioinformatics
 - How to send HTTP requests with `curl` (Bash)
