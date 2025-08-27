@@ -13,12 +13,13 @@ The project covers:
 We will use R to parse JSON and FASTA results.
 
 ```{r libraries, include=FALSE}
-library(jsonlite)  # JSON -> R objects
-library(readr)     # read files (FASTA as plain text)
-library(httr2)     # optional: R-side HTTP if you want
-library(glue)      # string interpolation
-library(dplyr)     # tidy data helpers
-library(purrr)     # iterate safely
+library(httr2)
+library(jsonlite)
+library(dplyr)
+library(purrr)
+library(readr)
+library(glue)
+library(listviewer)
 
 ```
 
@@ -78,11 +79,8 @@ We add expand=1 to include transcript information as well.
 In the below code:
 
 - lookup/symbol → endpoint to look up by gene symbol
-
 - homo_sapiens → species name
-
 - BRCA1 → gene symbol
-
 - expand=1 → include children features (transcripts, exons)
 
 ```{bash}
@@ -93,6 +91,11 @@ curl -s -H "Accept: application/json" \
 ```
 
 ## Parse in R:
+
+Gene ID: ENSG00000012048 - This is Ensembl's stable identifier for BRCA1. Gene symbols (like BRCA1) can change, but these IDs remain constant.
+Coordinates: Tell us exactly where on chromosome 17 this gene is located.
+Strand: Genes can be read in either direction along the chromosome (+ or - strand).
+Transcripts: Most genes have multiple "versions" called transcripts, which produce different protein variants.
 
 ```{r}
 
@@ -105,13 +108,13 @@ length(brca1$Transcript)                 # Number of transcripts
 
 ```
 
-# Download genomic sequence
+# Download genomic sequence (FASTA)
 
-Retrieve the genomic sequence of BRCA1 using its Ensembl ID.
+Retrieve the genomic sequence (DNA sequence) of BRCA1 using its Ensembl ID.
 
 - /sequence/id/{id} → fetches sequence by Ensembl ID
 
-- type=genomic → genomic DNA sequence
+- type=genomic → genomic DNA sequence  (including introns and exons)
 
 - Accept: text/x-fasta → return FASTA format
 
@@ -124,6 +127,7 @@ curl -s -H "Accept: text/x-fasta" \
 ```
 
 ## Check in R:
+
 
 ```{r}
 
@@ -140,8 +144,9 @@ Inside each transcript, there’s a special stretch called the CDS (coding DNA s
 1. Pull out the first transcript ID from the BRCA1 record.
 
 ```{r}
-# extract first transcript ID from brca1.json
+
 stopifnot(!is.null(brca1$Transcript), length(brca1$Transcript) > 0)
+# extract first transcript ID from brca1.json
 tx_id <- brca1$Transcript$id[[1]]
 tx_id
 writeLines(tx_id, "tx_id.txt")
