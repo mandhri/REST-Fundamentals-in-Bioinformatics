@@ -272,13 +272,17 @@ if (length(brca1_row) > 0) {
 
 ```
 
-# Batch queries (symbols → Ensembl IDs)
+# Batch: multiple symbols → Ensembl IDs → FASTA
 
-Automate look up for multiple symbols (BRCA1, TP53, EGFR).
+Now let's scale up and analyse several cancer-related genes at once:
+
 
 ```{r}
+# Define our gene list
+symbols <- c("BRCA1", "BRCA2", "TP53", "EGFR", "MYC")
+cat("Analyzing genes:", paste(symbols, collapse = ", "), "\n")
 
-symbols <- c("BRCA1", "TP53", "EGFR")
+# Save for bash processing
 writeLines(symbols, "symbols.txt")
 
 ```
@@ -287,38 +291,80 @@ writeLines(symbols, "symbols.txt")
 ```{bash}
 
 mkdir -p data
+
+# Loop through each gene symbol
 while read SYM; do
   curl -s -H "Accept: application/json" \
     "https://rest.ensembl.org/lookup/symbol/homo_sapiens/${SYM}?expand=0" \
     > "data/${SYM}.json"
-  sleep 0.2
+# sleep 0.2 is a bash command that pauses the script for 0.2 seconds before continuing to the next line. APIs have rate limits where they accept and handle maximum requests per second/minute.Without sleep: 100 requests in ~2 seconds (might fail) whereas With sleep 0.2: 100 requests in ~20 seconds (reliable) 
+sleep 0.2
 done < symbols.txt
 
 ```
 
 
-## check in R 
+## Compile results into a summary table: 
 
 ```{r}
 
-files <- list.files("data", pattern = "\\.json$", full.names = TRUE)
+# Process all the JSON files we created
+files <- list.files("/home/mandhri/REST-Fundamentals-in-Bioinformatics/data/", pattern = "\\.json$", full.names = TRUE)
+
 rows <- lapply(files, function(f){
-  x <- jsonlite::fromJSON(f, simplifyVector = TRUE)
-  data.frame(
-    symbol = sub("\\.json$", "", basename(f)),
-    id = x$id,
-    chr = x$seq_region_name,
-    start = x$start,
-    end = x$end,
-    strand = x$strand
-  )
+  tryCatch({
+    x <- jsonlite::fromJSON(f, simplifyVector = TRUE)
+    data.frame(
+      symbol = sub("\\.json$", "", basename(f)),
+      gene_id = x$id,
+      chr = x$seq_region_name,
+      start = x$start,
+      end = x$end,
+      strand = ifelse(x$strand == 1, "+", "-"),
+      gene_length = x$end - x$start + 1,
+      description = ifelse(is.null(x$description), "No description", x$description)
+    )
+  }, error = function(e) {
+    cat("Error processing", f, ":", e$message, "\n")
+    return(NULL)
+  })
 })
-tbl <- do.call(rbind, rows)
-tbl
+
+# Combine all results
+tbl <- do.call(rbind, rows[!sapply(rows, is.null)])
+
+# Sort by chromosome and position
+tbl <- tbl[order(tbl$chr, tbl$start), ]
+print(tbl)
+
+# Save results
 write_csv(tbl, "genes_coordinates.csv")
-
-
+cat("\nResults saved to genes_coordinates.csv\n")
 ```
+
+
+## Visualise gene locations:
+
+```{r}
+
+# Simple visualisation of gene locations
+library(ggplot2)
+
+# Create a plot showing gene positions
+p <- ggplot(tbl, aes(x = start/1e6, y = factor(chr, levels = unique(chr)), 
+                     color = symbol)) +
+  geom_point(size = 3) +
+  labs(
+    title = "Chromosomal Locations of Cancer Genes",
+    x = "Position (Mb)",
+    y = "Chromosome",
+    color = "Gene"
+  ) +
+  theme_minimal()
+
+print(p)
+```
+
 
 # Batch download genomic FASTA
 For each Ensembl ID, download its genomic sequence.
