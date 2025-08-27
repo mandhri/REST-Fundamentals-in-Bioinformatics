@@ -128,23 +128,44 @@ curl -s -H "Accept: text/x-fasta" \
 
 ## Check in R:
 
+FASTA is the standard format for biological sequences:
+
+Line starting with >  → header (contains sequence name and description)
+Following lines  → the actual sequence
+Sequences are usually broken into lines of 60-80 characters for readability
 
 ```{r}
 
+# Read the FASTA file
 fa <- readr::read_file("BRCA1_genomic.fasta")
+
+# Show the header and first part of sequence
 substr(fa, 1, 200)
+
+# Count nucleotides
+sequence_only <- gsub(">[^\n]*\n", "", fa)  # Remove header
+sequence_only <- gsub("\n", "", sequence_only)  # Remove line breaks
+cat("\nSequence length:", nchar(sequence_only), "nucleotides\n")
+
+# Count each nucleotide
+cat("Nucleotide composition:\n")
+cat("A:", sum(strsplit(sequence_only, "")[[1]] == "A"), "\n")
+cat("T:", sum(strsplit(sequence_only, "")[[1]] == "T"), "\n")
+cat("G:", sum(strsplit(sequence_only, "")[[1]] == "G"), "\n")
+cat("C:", sum(strsplit(sequence_only, "")[[1]] == "C"), "\n")
 ```
 
-# Download transcripts
+# Download transcripts and focus on Protein-Coding Sequences
 
-Up until now, we grabbed the BRCA1 gene and downloaded the whole genomic DNA sequence. But remember: genes can make different “versions” of RNA, called transcripts. Each transcript is like an alternative recipe for making the protein.
+Up until now, we grabbed the BRCA1 gene and downloaded the whole genomic DNA sequence. The genomic sequence includes everything: introns (removed during RNA processing) and exons (kept in the final mRNA). But remember: genes can make different “versions” of RNA, called transcripts. Each transcript is like an alternative recipe for making the protein.
 
-Inside each transcript, there’s a special stretch called the CDS (coding DNA sequence). That’s the part of the DNA that actually codes for the protein.
+Inside each transcript, there’s a special stretch called the CDS (coding DNA sequence). That’s the part of the DNA that actually codes for the protein. For protein analysis, we usually want just the CDS
 
 1. Pull out the first transcript ID from the BRCA1 record.
 
 ```{r}
 
+# Ensure transcript data is available before proceeding
 stopifnot(!is.null(brca1$Transcript), length(brca1$Transcript) > 0)
 # extract first transcript ID from brca1.json
 tx_id <- brca1$Transcript$id[[1]]
