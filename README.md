@@ -17,7 +17,6 @@ The tutorial is implemented as an **R Markdown document** (`ensembl_rest_tutoria
   - Fetch genomic sequences and coding sequences
   - Explore transcripts of a gene
   - Query genomic regions for overlapping genes
-  - List available species in Ensembl
   - Automate batch queries (symbols → Ensembl IDs → FASTA)
 
 ---
