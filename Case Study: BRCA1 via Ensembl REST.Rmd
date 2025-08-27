@@ -10,26 +10,64 @@ This mini-project demonstrates how to use a **REST API** in bioinformatics, usin
 We will practice making requests in **Bash** (with `curl`) and parsing the results in **R**.
 The project covers:
 
-1. Looking up a gene by symbol (BRCA1)  
-2. Fetching genomic sequences  
-3. Exploring transcripts  
-4. Querying a genomic region for overlapping genes  
-5. Debugging with headers and listing available species  
-6. Batch queries (symbols → Ensembl IDs → FASTA)  
-
 We will use R to parse JSON and FASTA results.
 
 ```{r libraries, include=FALSE}
-library(httr2)
-library(jsonlite)
-library(dplyr)
-library(purrr)
-library(readr)
-library(glue)
-library(listviewer)
+library(jsonlite)  # JSON -> R objects
+library(readr)     # read files (FASTA as plain text)
+library(httr2)     # optional: R-side HTTP if you want
+library(glue)      # string interpolation
+library(dplyr)     # tidy data helpers
+library(purrr)     # iterate safely
+
+```
 
 
+# Test API Connectivity
 
+Before diving into complex queries, let's verify the API is working and explore what's available.
+
+## Check if the API is alive
+
+The /info/ping endpoint tells us if the Ensembl servers are responding:
+We expect to see HTTP/1.1 200 OK if the server is healthy.
+
+```{bash}
+
+# -s       : silent (less noise)
+# -D -     : print response headers to stdout ("-")
+# -o /dev/null : discard the body (we only care about headers here)
+curl -s -D - -o /dev/null "https://rest.ensembl.org/info/ping"
+
+```
+
+# Explore Available Species
+Let's see what organisms are available in Ensembl:
+
+What this does: Requests the species list as JSON and saves to species.json.
+We then inspect it in R to confirm homo_sapiens is available.
+
+```{bash}
+
+# 'content-type=application/json' tells the API to send JSON back
+curl -s "https://rest.ensembl.org/info/species?content-type=application/json" \
+  > species.json
+
+```
+
+## Parse in R:
+
+```{r}
+
+sp <- jsonlite::fromJSON("species.json")
+length(sp$species)             # how many species are listed?
+head(sp$species$name, 10)      # first ten species names
+
+# Find humans specifically
+human_info <- sp$species[sp$species$name == "homo_sapiens", ]
+cat("Name:", human_info$name, "\n")
+cat("Display name:", human_info$display_name, "\n") 
+cat("Assembly:", human_info$assembly, "\n")
 ```
 
 # Lookup a gene by symbol
