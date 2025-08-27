@@ -193,12 +193,45 @@ substr(cds, 1, 200)
 
 ```
 
-# Overlap by genomic region
-Find all genes overlapping a specific region on chromosome 17.
+# Compare genomic vs CDS lengths:
+
+Key Insight: The genomic sequence is much longer than the CDS because it includes introns, which are spliced out during mRNA processing.
+
+```{r}
+
+# Read CDS sequence
+cds <- readr::read_file(paste0(tx_id, "_cds.fasta"))
+
+# Extract sequence without header/newlines
+cds_seq <- gsub(">[^\n]*\n", "", cds)
+cds_seq <- gsub("\n", "", cds_seq)
+
+cat("Genomic sequence length:", nchar(sequence_only), "bp\n")
+cat("CDS sequence length:", nchar(cds_seq), "bp\n")
+cat("Difference:", nchar(sequence_only) - nchar(cds_seq), "bp (mostly introns)\n")
+
+# Show start of CDS
+cat("\nFirst 60 nucleotides of CDS:\n")
+cat(substr(cds_seq, 1, 60), "\n")
+
+# Translate to amino acids (first 20)
+if (nchar(cds_seq) >= 60) {
+  codons <- substring(cds_seq, seq(1, 57, 3), seq(3, 59, 3))
+  cat("\nFirst 20 codons:", paste(codons, collapse = " "), "\n")
+}
+
+```
+
+
+#  Explore a Chromosomal Region
+Let's find all genes near BRCA1 on chromosome 17:
 
 - /overlap/region/{species}/{chr}:{start}-{end} → region query
 
 - feature=gene → only return genes
+
+This 200kb region includes BRCA1 and neighboring genes
+feature=gene means we only want genes (not other features like regulatory elements)
 
 ```{bash}
 curl -s -H "Accept: application/json" \
@@ -208,42 +241,34 @@ curl -s -H "Accept: application/json" \
 ```
 
 ## Check in R:
+This shows you the genomic neighborhood around BRCA1. Gene density varies across the genome - some regions are gene-rich, others are gene-poor.
 
 ```{r}
+# Load regional gene data
 ov <- jsonlite::fromJSON("overlap_chr17.json", simplifyVector = TRUE)
-data.frame(
+
+cat("Found", nrow(ov), "genes in this 200kb region\n\n")
+
+# Create a clean table
+gene_table <- data.frame(
   symbol = ov$external_name,
   gene_id = ov$gene_id,
   chr = ov$seq_region_name,
   start = ov$start,
-  end = ov$end
+  end = ov$end,
+  strand = ifelse(ov$strand == 1, "+", "-"),
+  length = ov$end - ov$start + 1
 )
 
+# Sort by position
+gene_table <- gene_table[order(gene_table$start), ]
+print(gene_table)
 
-```
-# List available species and debug with headers
-
-Verify the API is live: Verify the API is live and list available species.
-
-and 
-
-Inspect response headers to check status codes:This prints headers including 200 OK (success) or errors like 429 Too Many Requests.
-
-```{bash}
-
-curl -s "https://rest.ensembl.org/info/species?content-type=application/json" \
-  > species.json
-curl -s -D - -o /dev/null "https://rest.ensembl.org/info/ping"
-
-```
-
-## Check in R:
-
-```{r}
-
-sp <- jsonlite::fromJSON("species.json")
-length(sp$species)  # number of species
-head(sp$species$name)
+# Find BRCA1 in this list
+brca1_row <- which(gene_table$symbol == "BRCA1")
+if (length(brca1_row) > 0) {
+  cat("\nBRCA1 is gene #", brca1_row, "in this region\n")
+}
 
 ```
 
