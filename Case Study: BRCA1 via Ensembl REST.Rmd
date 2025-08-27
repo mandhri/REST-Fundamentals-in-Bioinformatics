@@ -366,14 +366,17 @@ print(p)
 ```
 
 
-# Batch download genomic FASTA
-For each Ensembl ID, download its genomic sequence.
+# Download genomic FASTA for each Ensembl ID (Batch download genomic FASTA)
+
+Let's download genomic sequences for all our genes:
 
 ```{bash}
 
+# Extract gene IDs from our CSV file (skip header)
 awk -F, 'NR>1 {print $2}' genes_coordinates.csv > gene_ids.txt
 
 mkdir -p fasta_genomic
+# Download each sequence
 while read GID; do
   curl -s -H "Accept: text/x-fasta" \
     "https://rest.ensembl.org/sequence/id/${GID}?type=genomic" \
@@ -381,6 +384,44 @@ while read GID; do
   sleep 0.2
 done < gene_ids.txt
 
+
+```
+
+Analyse sequence properties:
+
+
+```{r}
+
+# Analyse all downloaded sequences
+fasta_files <- list.files("/home/mandhri/REST-Fundamentals-in-Bioinformatics/fasta_genomic", pattern = "\\.fasta$", full.names = TRUE)
+
+seq_analysis <- lapply(fasta_files, function(f) {
+  # Read sequence
+  fa <- readr::read_file(f)
+  seq_only <- gsub(">[^\n]*\n", "", fa)
+  seq_only <- gsub("\n", "", seq_only)
+  
+  # Extract gene ID from filename
+  gene_id <- sub("_genomic\\.fasta$", "", basename(f))
+  
+  # Calculate properties
+  data.frame(
+    gene_id = gene_id,
+    length = nchar(seq_only),
+    gc_content = (sum(strsplit(seq_only, "")[[1]] %in% c("G", "C")) / nchar(seq_only)) * 100
+  )
+})
+
+seq_stats <- do.call(rbind, seq_analysis)
+
+# Merge with gene symbols
+final_table <- merge(tbl[, c("symbol", "gene_id")], seq_stats, by = "gene_id")
+print(final_table)
+
+# Summary statistics
+cat("\nSequence Statistics:\n")
+cat("Average gene length:", round(mean(final_table$length)), "bp\n")
+cat("Average GC content:", round(mean(final_table$gc_content), 1), "%\n")
 
 ```
 
